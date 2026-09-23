@@ -5,7 +5,7 @@ An AI-assisted hiring platform with two portals: a **Student portal** for resume
 - **Frontend:** React (Vite), Firebase Authentication
 - **Backend:** FastAPI (Python 3.11+)
 - **AI:** Google Gemini (`google-genai`) for resume/JD extraction and generation
-- **Storage:** Azure Cosmos DB (resume/account records) and Azure Blob Storage (resume files)
+- **Storage:** Firebase Firestore (resume/account records) and Firebase Storage (resume files)
 
 ## Table of Contents
 
@@ -41,11 +41,11 @@ An AI-assisted hiring platform with two portals: a **Student portal** for resume
 
 ```
 frontend (React/Vite)  --HTTP-->  backend (FastAPI)  -->  Google Gemini (AI extraction/generation)
-                                                      -->  Azure Cosmos DB (accounts, resume metadata)
-                                                      -->  Azure Blob Storage (resume files)
+                                                      -->  Firebase Firestore (accounts, resume metadata)
+                                                      -->  Firebase Storage (resume files)
 ```
 
-The frontend also talks to Firebase directly for authentication state; the backend exposes its own lightweight account lookup/login/upsert endpoints backed by Cosmos DB.
+The frontend also talks to Firebase directly for authentication state; the backend exposes its own lightweight account lookup/login/upsert endpoints backed by Firestore.
 
 ## Folder Structure
 
@@ -66,7 +66,6 @@ HireFlow AI
 │   ├── routers/          # thin FastAPI route handlers
 │   ├── services/         # resume, HR, AI, storage, and auth logic
 │   └── tests/
-├── .github/workflows/    # CI/CD (Azure App Service)
 ├── Dockerfile
 └── README.md
 ```
@@ -78,8 +77,7 @@ HireFlow AI
 - Python 3.11+
 - Node.js 18+
 - A Google Gemini API key
-- Azure Cosmos DB and Azure Blob Storage accounts (for resume persistence)
-- A Firebase project (for frontend authentication)
+- A Firebase project with Firestore and Storage enabled (for data/resume persistence and frontend authentication)
 
 ### Backend
 
@@ -110,14 +108,16 @@ Set these for the backend (e.g. in a `.env` file at the project or `backend/` ro
 | Variable | Purpose |
 | --- | --- |
 | `GEMINI_API_KEY` | Google Gemini API key used for resume/JD extraction and generation |
-| `COSMOS_ENDPOINT` | Azure Cosmos DB account endpoint |
-| `COSMOS_KEY` | Azure Cosmos DB account key |
-| `COSMOS_DATABASE` | Cosmos database name |
-| `COSMOS_CONTAINER` | Cosmos container for accounts |
-| `COSMOS_RESUME_CONTAINER` | Cosmos container for resume metadata |
-| `COSMOS_PARTITION_KEY_PATH` | Partition key path used when creating containers |
-| `AZURE_STORAGE_CONNECTION_STRING` | Azure Blob Storage connection string |
-| `AZURE_STORAGE_CONTAINER` | Blob container used for resume files |
+| `FIREBASE_SERVICE_ACCOUNT_JSON` | Firebase service account credentials, as a raw JSON string (use this or `FIREBASE_SERVICE_ACCOUNT_PATH`) |
+| `FIREBASE_SERVICE_ACCOUNT_PATH` | Path to a Firebase service account JSON key file (falls back to `GOOGLE_APPLICATION_CREDENTIALS` if unset) |
+| `FIREBASE_STORAGE_BUCKET` | Firebase Storage bucket name used for resume files |
+| `FIRESTORE_ACCOUNTS_COLLECTION` | Firestore collection for accounts (default `accounts`) |
+| `FIRESTORE_RESUME_COLLECTION` | Firestore collection for resume metadata (default `resumes`) |
+| `FIRESTORE_EMAIL_COLLECTION` | Firestore collection for email drafts (default `email_drafts`) |
+| `FIRESTORE_REQUISITION_COLLECTION` | Firestore collection for job requisitions (default `requisitions`) |
+| `FIRESTORE_PIPELINE_COLLECTION` | Firestore collection for candidate pipeline records (default `pipeline_records`) |
+
+Without Firebase credentials configured, the backend falls back to in-memory storage (data does not persist across restarts) — useful for local development.
 
 Firebase configuration for the frontend lives in `frontend/src/firebase.js`.
 
@@ -168,5 +168,3 @@ pytest backend/tests
 ## Deployment
 
 - `Dockerfile` builds a container that installs backend dependencies and serves the FastAPI app with `uvicorn` on port `8000`.
-- `.github/workflows/dev.yml` deploys the backend to an Azure App Service (Dev environment) on push to `main`.
-- `.github/workflows/prod.yml` is a placeholder for the production deployment pipeline.

@@ -82,11 +82,11 @@ def _ats_score_regex(resume_text: str, job_description: str = "") -> dict[str, A
     }
 
 
-def ats_score(resume_text: str, job_description: str = "", *, use_ai: bool = True) -> dict[str, Any]:
+def ats_score(resume_text: str, job_description: str = "", *, use_ai: bool = True, api_key: str = "") -> dict[str, Any]:
     result: dict[str, Any] | None = None
-    api_key = os.getenv("GEMINI_API_KEY", "").strip()
-    if use_ai and api_key and job_description.strip():
-        result = score_resume_with_ai(resume_text, job_description, api_key)
+    resolved_key = api_key.strip() or os.getenv("GEMINI_API_KEY", "").strip()
+    if use_ai and resolved_key and job_description.strip():
+        result = score_resume_with_ai(resume_text, job_description, resolved_key)
 
     if result is None:
         result = _ats_score_regex(resume_text, job_description)
@@ -156,15 +156,15 @@ class CoverLetterError(Exception):
     pass
 
 
-def generate_cover_letter(resume_text: str, job_description: str = "", additional_context: str = "") -> str:
+def generate_cover_letter(resume_text: str, job_description: str = "", additional_context: str = "", api_key: str = "") -> str:
     if not job_description.strip():
         raise CoverLetterError("A job description is required to generate a tailored cover letter.")
 
-    api_key = os.getenv("GEMINI_API_KEY", "").strip()
-    if not api_key:
+    resolved_key = api_key.strip() or os.getenv("GEMINI_API_KEY", "").strip()
+    if not resolved_key:
         raise CoverLetterError("Cover letter generation is not configured (missing GEMINI_API_KEY).")
 
-    letter = generate_cover_letter_with_ai(resume_text, job_description, additional_context, api_key)
+    letter = generate_cover_letter_with_ai(resume_text, job_description, additional_context, resolved_key)
     if not letter:
         raise CoverLetterError("Cover letter generation failed. Please try again.")
     return letter

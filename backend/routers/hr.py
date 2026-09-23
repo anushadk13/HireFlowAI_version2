@@ -4,7 +4,7 @@ import os
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Header, HTTPException
 
 from backend.schemas import (
     AssessmentInput,
@@ -41,8 +41,11 @@ router = APIRouter()
 
 
 @router.post("/api/hr/parse-jd")
-def api_parse_jd(payload: JobDescriptionInput) -> dict[str, Any]:
-    api_key = os.getenv("GEMINI_API_KEY", "").strip()
+def api_parse_jd(
+    payload: JobDescriptionInput,
+    x_gemini_api_key: str = Header(default="", alias="X-Gemini-Api-Key"),
+) -> dict[str, Any]:
+    api_key = x_gemini_api_key.strip() or os.getenv("GEMINI_API_KEY", "").strip()
     if api_key:
         ai_result = extract_jd_with_ai(payload.job_description, api_key)
         if ai_result is not None:
@@ -51,8 +54,11 @@ def api_parse_jd(payload: JobDescriptionInput) -> dict[str, Any]:
 
 
 @router.post("/api/hr/screen")
-def api_hr_screen(payload: ResumeInput) -> dict[str, Any]:
-    analysis = ats_score(payload.resume_text, payload.job_description)
+def api_hr_screen(
+    payload: ResumeInput,
+    x_gemini_api_key: str = Header(default="", alias="X-Gemini-Api-Key"),
+) -> dict[str, Any]:
+    analysis = ats_score(payload.resume_text, payload.job_description, api_key=x_gemini_api_key)
     project = project_evaluation(payload.resume_text)
     fraud = fraud_detection(payload.resume_text)
     return {
@@ -84,12 +90,12 @@ def api_hr_resumes() -> dict[str, Any]:
     }
 
 
-def _score_candidate(candidate: dict[str, Any], job_description: str) -> dict[str, Any]:
+def _score_candidate(candidate: dict[str, Any], job_description: str, api_key: str = "") -> dict[str, Any]:
     text = candidate.get("resume_text", "")
     name = candidate.get("name", "Candidate")
     # use_ai=True: falls back to the regex scorer automatically (see ats_score) if
-    # GEMINI_API_KEY is missing or the AI call fails.
-    analysis = ats_score(text, job_description, use_ai=True)
+    # no API key is available or the AI call fails.
+    analysis = ats_score(text, job_description, use_ai=True, api_key=api_key)
     project = project_evaluation(text)
     total = min(100, round(analysis["ats_score"] * 0.65 + project["score"] * 0.35))
     return {
@@ -150,11 +156,16 @@ def _persist_ranked_candidates(requisition_id: str, ranked: list[dict[str, Any]]
 
 
 @router.post("/api/hr/rank")
-def api_rank_candidates(payload: CandidateBatchInput) -> dict[str, Any]:
+def api_rank_candidates(
+    payload: CandidateBatchInput,
+    x_gemini_api_key: str = Header(default="", alias="X-Gemini-Api-Key"),
+) -> dict[str, Any]:
     # Each candidate's AI call is a blocking network request, so score candidates
     # concurrently instead of one-by-one to keep total request latency reasonable.
     with ThreadPoolExecutor(max_workers=min(8, len(payload.candidates)) or 1) as pool:
-        ranked = list(pool.map(lambda c: _score_candidate(c, payload.job_description), payload.candidates))
+        ranked = list(
+            pool.map(lambda c: _score_candidate(c, payload.job_description, x_gemini_api_key), payload.candidates)
+        )
     ranked.sort(key=lambda item: item["score"], reverse=True)
 
     requisition_id = payload.requisition_id.strip()

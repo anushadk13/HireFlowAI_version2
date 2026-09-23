@@ -1,4 +1,5 @@
 from __future__ import annotations
+import logging
 from typing import Any
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -8,6 +9,7 @@ from backend.routers.auth import router as auth_router
 from backend.routers.hr import router as hr_router
 from backend.routers.resume import router as resume_router
 
+logger = logging.getLogger(__name__)
 
 app = FastAPI(title="HireFlow AI", version="1.0.0")
 
@@ -26,5 +28,9 @@ app.include_router(hr_router)
 
 
 @app.exception_handler(Exception)
-def generic_exception_handler(_request: Request, exc: Exception) -> JSONResponse:
-    return JSONResponse({"detail": str(exc)}, status_code=500)
+def generic_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    # Never echo the raw exception back to the client: it can contain secrets
+    # (e.g. an API key embedded in a third-party SDK's error message). Log the
+    # detail server-side instead, where it's actually needed for debugging.
+    logger.exception("Unhandled error on %s %s", request.method, request.url.path)
+    return JSONResponse({"detail": "Internal server error"}, status_code=500)

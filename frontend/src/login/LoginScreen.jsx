@@ -99,9 +99,18 @@ export default function LoginScreen({ onBack, onSelectStudent, onSelectHr, LogoM
     }
   }
 
-  function routeByRole(role) {
+  function routeByRole(account) {
     clearFlow();
-    const normalizedRole = String(role || "student").trim().toLowerCase();
+
+    // Email/password sign-in never creates a Firebase Auth session (only
+    // Google does), so the portals can't rely on auth.currentUser to know
+    // who's logged in. Persist the account doc's own email here instead —
+    // it's the one identity source that works for every provider.
+    if (typeof window !== "undefined" && account?.email) {
+      window.sessionStorage.setItem("hireflow-account-email", account.email);
+    }
+
+    const normalizedRole = String(account?.role || "student").trim().toLowerCase();
     const nextView = normalizedRole === "hr" ? "hr" : "student";
 
     if (typeof window !== "undefined") {
@@ -125,7 +134,7 @@ export default function LoginScreen({ onBack, onSelectStudent, onSelectHr, LogoM
       const account = await postJSON("/api/auth/lookup", {
         email: user.email,
       });
-      routeByRole(account.role);
+      routeByRole(account);
     } catch (error) {
       if (error?.status !== 404) {
         setErrorMessage(error?.message || "Google sign-in failed.");
@@ -185,7 +194,7 @@ export default function LoginScreen({ onBack, onSelectStudent, onSelectHr, LogoM
         password: trimmedPassword,
       });
 
-      routeByRole(account.role);
+      routeByRole(account);
     } catch (error) {
       setErrorMessage(error?.message || "Could not sign in.");
     } finally {
@@ -228,7 +237,7 @@ export default function LoginScreen({ onBack, onSelectStudent, onSelectHr, LogoM
         workspace: selectedRole,
       });
 
-      routeByRole(account.role);
+      routeByRole(account);
     } catch (error) {
       setErrorMessage(error?.message || "Could not create the account.");
     } finally {

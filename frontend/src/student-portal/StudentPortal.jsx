@@ -72,10 +72,31 @@ function getStoredProfilePhoto() {
   return getStoredValue("hireflow-student-profile-photo", "");
 }
 
+// Bring-your-own-key: read fresh on every call so postJSON always sends
+// whatever is currently saved, without threading the key through every
+// call site. Only ever kept in the browser — the backend never persists it.
+function getStoredGeminiApiKey() {
+  return getStoredValue("hireflow-gemini-api-key", "");
+}
+
+// Email/password sign-in never creates a Firebase Auth session (only Google
+// does), so the account's real name/email/role has to come from the account
+// doc itself (see LoginScreen.jsx's routeByRole) rather than auth.currentUser.
+function getStoredAccountEmail() {
+  if (typeof window === "undefined") {
+    return "";
+  }
+  return window.sessionStorage.getItem("hireflow-account-email") || "";
+}
+
 async function postJSON(path, body) {
+  const apiKey = getStoredGeminiApiKey();
   const res = await fetch(`${API_BASE}${path}`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      ...(apiKey ? { "X-Gemini-Api-Key": apiKey } : {}),
+    },
     body: JSON.stringify(body),
   });
   if (!res.ok) {
@@ -223,9 +244,11 @@ export default function StudentPortal({ onSignOut }) {
   const profileMenuRef = useRef(null);
   const profileMenuButtonRef = useRef(null);
   const [currentUser, setCurrentUser] = useState(null);
+  const [accountRecord, setAccountRecord] = useState(null);
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   const [selectedTheme, setSelectedTheme] = useState(getInitialTheme);
   const [profilePhoto, setProfilePhoto] = useState(getStoredProfilePhoto);
+  const [geminiApiKey, setGeminiApiKey] = useState(getStoredGeminiApiKey);
   const [resume, setResume] = useState("");
   const [jobDescription, setJobDescription] = useState("");
   const [resumeMode, setResumeMode] = useState("upload");
@@ -248,7 +271,9 @@ export default function StudentPortal({ onSignOut }) {
   const [error, setError] = useState("");
 
   const summary = getResumeHeader(resume);
-  const profileName = currentUser?.displayName || currentUser?.email?.split("@")?.[0] || "Logged in user";
+  const accountEmail = accountRecord?.email || currentUser?.email || "";
+  const profileName =
+    accountRecord?.display_name || currentUser?.displayName || accountEmail.split("@")[0] || "Logged in user";
   const profileInitials = profileName
     .split(/\s+/)
     .filter(Boolean)
@@ -295,11 +320,21 @@ export default function StudentPortal({ onSignOut }) {
   }, []);
 
   useEffect(() => {
-    const email = currentUser?.email;
-    if (!email) return;
+    const email = getStoredAccountEmail();
+    if (!email) {
+      return;
+    }
+
+    postJSON("/api/auth/lookup", { email })
+      .then(setAccountRecord)
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    if (!accountEmail) return;
 
     let cancelled = false;
-    fetchResumeList(email)
+    fetchResumeList(accountEmail)
       .then((records) => {
         if (!cancelled) {
           setUploadedResumes(records.map(mapResumeRecord));
@@ -314,7 +349,7 @@ export default function StudentPortal({ onSignOut }) {
     return () => {
       cancelled = true;
     };
-  }, [currentUser?.email]);
+  }, [accountEmail]);
 
   useEffect(() => {
     const handleClick = (event) => {
@@ -364,6 +399,19 @@ export default function StudentPortal({ onSignOut }) {
 
     window.localStorage.removeItem("hireflow-student-profile-photo");
   }, [profilePhoto]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    if (geminiApiKey) {
+      window.localStorage.setItem("hireflow-gemini-api-key", geminiApiKey);
+      return;
+    }
+
+    window.localStorage.removeItem("hireflow-gemini-api-key");
+  }, [geminiApiKey]);
 
   useEffect(() => {
     const jobText = jobDescription.trim();
@@ -457,7 +505,7 @@ export default function StudentPortal({ onSignOut }) {
     if (!file) return;
 
     try {
-      const result = await uploadResumeFile(file, currentUser?.email || "");
+      const result = await uploadResumeFile(file, accountEmail);
       const text = result.text || "";
       if (!text.trim()) {
         throw new Error("No readable text was found in the uploaded resume.");
@@ -523,7 +571,7 @@ export default function StudentPortal({ onSignOut }) {
     if (!file) return;
 
     try {
-      const result = await uploadResumeFile(file, currentUser?.email || "");
+      const result = await uploadResumeFile(file, accountEmail);
       const text = result.text || "";
       if (!text.trim()) {
         throw new Error("No readable text was found in the uploaded resume.");
@@ -547,9 +595,9 @@ export default function StudentPortal({ onSignOut }) {
 
   async function handleDeleteResume(resumeId) {
     setUploadedResumes((prev) => prev.filter((r) => r.id !== resumeId));
-    if (currentUser?.email) {
+    if (accountEmail) {
       try {
-        await deleteResumeRemote(resumeId, currentUser.email);
+        await deleteResumeRemote(resumeId, accountEmail);
       } catch (err) {
         setError(err.message);
       }
@@ -561,9 +609,9 @@ export default function StudentPortal({ onSignOut }) {
     if (!selectedResume) return;
 
     let text = selectedResume.text;
-    if (!text && currentUser?.email) {
+    if (!text && accountEmail) {
       try {
-        text = await fetchResumeText(resumeId, currentUser.email);
+        text = await fetchResumeText(resumeId, accountEmail);
         setUploadedResumes((prev) => prev.map((r) => (r.id === resumeId ? { ...r, text } : r)));
       } catch (err) {
         setError(err.message);
@@ -581,6 +629,14 @@ export default function StudentPortal({ onSignOut }) {
 
   function handleSelectTheme(theme) {
     setSelectedTheme(theme);
+  }
+
+  function handleSaveApiKey(key) {
+    setGeminiApiKey(key.trim());
+  }
+
+  function handleClearApiKey() {
+    setGeminiApiKey("");
   }
 
   function handleProfilePhotoUpload(event) {
@@ -606,6 +662,9 @@ export default function StudentPortal({ onSignOut }) {
     setProfileMenuOpen(false);
     try {
       await signOut(auth);
+      if (typeof window !== "undefined") {
+        window.sessionStorage.removeItem("hireflow-account-email");
+      }
       onSignOut?.();
     } catch (err) {
       setError(err?.message || "Could not sign out.");
@@ -685,8 +744,8 @@ export default function StudentPortal({ onSignOut }) {
         {activeSection === "settings" ? (
           <StudentSettings
             accountInfo={[
-              { label: "Name", value: currentUser?.displayName || "Not available" },
-              { label: "Email", value: currentUser?.email || "Not available" },
+              { label: "Name", value: accountRecord?.display_name || "Not available" },
+              { label: "Email", value: accountRecord?.email || "Not available" },
             ]}
             currentUser={currentUser}
             onBackToDashboard={() => setActiveSection("analyzer")}
@@ -699,6 +758,9 @@ export default function StudentPortal({ onSignOut }) {
             selectedTheme={selectedTheme}
             themeOptions={THEME_OPTIONS}
             onSelectTheme={handleSelectTheme}
+            geminiApiKey={geminiApiKey}
+            onSaveApiKey={handleSaveApiKey}
+            onClearApiKey={handleClearApiKey}
           />
         ) : activeSection === "resume" ? (
           <ResumeLibrary
