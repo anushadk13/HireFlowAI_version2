@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, File, Form, Header, HTTPException, UploadFile
 
 from backend.schemas import CareerQuestionInput, ResumeInput
 from backend.services.blob_storage import resume_blob_storage
@@ -117,8 +117,11 @@ def api_resume_delete(resume_id: str, user_id: str) -> dict[str, Any]:
 
 
 @router.post("/api/resume/analyze")
-def api_resume_analyze(payload: ResumeInput) -> dict[str, Any]:
-    analysis = ats_score(payload.resume_text, payload.job_description)
+def api_resume_analyze(
+    payload: ResumeInput,
+    x_gemini_api_key: str = Header(default="", alias="X-Gemini-Api-Key"),
+) -> dict[str, Any]:
+    analysis = ats_score(payload.resume_text, payload.job_description, api_key=x_gemini_api_key)
     analysis["summary"] = (
         "The resume is well aligned for screening." if analysis["ats_score"] >= 80 else "The resume needs tighter keyword alignment and clearer achievement language."
     )
@@ -131,9 +134,14 @@ def api_resume_improve(payload: ResumeInput) -> dict[str, Any]:
 
 
 @router.post("/api/resume/cover-letter")
-def api_cover_letter(payload: ResumeInput) -> dict[str, str]:
+def api_cover_letter(
+    payload: ResumeInput,
+    x_gemini_api_key: str = Header(default="", alias="X-Gemini-Api-Key"),
+) -> dict[str, str]:
     try:
-        letter = generate_cover_letter(payload.resume_text, payload.job_description, payload.additional_context)
+        letter = generate_cover_letter(
+            payload.resume_text, payload.job_description, payload.additional_context, api_key=x_gemini_api_key
+        )
     except CoverLetterError as exc:
         status_code = 400 if "job description is required" in str(exc) else 503
         raise HTTPException(status_code=status_code, detail=str(exc)) from exc

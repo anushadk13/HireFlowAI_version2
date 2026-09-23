@@ -174,14 +174,54 @@
 }
 
 .hr-portal__sidebar-footer {
+  position: relative;
   margin-top: auto;
+}
+
+.hr-portal__profile {
   display: flex;
   align-items: center;
   gap: 10px;
+  width: 100%;
   padding: 12px;
   border-radius: 14px;
   background: rgba(255, 255, 255, 0.8);
   border: 1px solid var(--hr-line);
+  text-align: left;
+}
+
+.hr-portal__profile-menu {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(100% + 8px);
+  display: grid;
+  gap: 6px;
+  padding: 8px;
+  border-radius: 14px;
+  background: #fff;
+  border: 1px solid var(--hr-line);
+  box-shadow: 0 14px 28px rgba(27, 35, 72, 0.12);
+  z-index: 11;
+}
+
+.hr-portal__profile-menu-item {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-height: 36px;
+  padding: 0 12px;
+  border-radius: 10px;
+  background: #f6f7fd;
+  color: var(--hr-text);
+  font-weight: 700;
+  font-size: 0.84rem;
+  text-align: left;
+}
+
+.hr-portal__profile-menu-item:hover {
+  background: rgba(111, 53, 255, 0.1);
+  color: var(--hr-purple);
 }
 
 .hr-portal__footer-name {
@@ -590,6 +630,19 @@
   font-weight: 700;
   color: #556082;
   margin-bottom: 7px;
+}
+
+.hr-portal__form-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.hr-portal__settings-grid {
+  display: grid;
+  gap: 18px;
+  max-width: 560px;
 }
 
 .hr-portal textarea,

@@ -1788,6 +1788,21 @@
   gap: 10px;
 }
 
+.student-portal__settings-input {
+  width: 100%;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: #f8f9fe;
+  border: 1px solid rgba(var(--student-accent-rgb), 0.12);
+  font-size: 0.85rem;
+  color: #20253a;
+}
+
+.student-portal__settings-input:focus {
+  outline: none;
+  border-color: var(--student-accent);
+}
+
 .student-portal__settings-row {
   display: flex;
   align-items: center;

@@ -3,33 +3,13 @@ from __future__ import annotations
 import os
 import uuid
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Any
 
+from google.cloud.firestore_v1.base_query import FieldFilter
+
+from backend.services.firebase_client import get_firestore_client
+
 _MAX_RESUMES_PER_USER = 5
-
-
-def _load_env_file() -> None:
-    candidates = [
-        Path(__file__).resolve().parents[1] / ".env",
-        Path(__file__).resolve().parents[2] / ".env",
-        Path.cwd() / ".env",
-    ]
-
-    for env_path in candidates:
-        if not env_path.exists():
-            continue
-
-        for raw_line in env_path.read_text(encoding="utf-8").splitlines():
-            line = raw_line.strip()
-            if not line or line.startswith("#") or "=" not in line:
-                continue
-
-            key, value = line.split("=", 1)
-            os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
-
-
-_load_env_file()
 
 
 def _utc_now() -> str:
@@ -41,53 +21,28 @@ def _normalize_user_id(user_id: str) -> str:
 
 
 class ResumeStore:
-    """Per-user resume metadata, keyed and partitioned by user_id. The actual
-    file bytes live in Azure Blob Storage; this store only tracks references
-    (blob_name/container) so we never need to list a blob container to answer
-    "what resumes does this user have"."""
+    """Per-user resume metadata, keyed by user_id. The actual file bytes live
+    in Firebase Storage; this store only tracks references (blob_name/container)
+    so we never need to list a storage bucket to answer "what resumes does this
+    user have"."""
 
     def __init__(self) -> None:
-        self._mode = "memory"
         self._memory: dict[str, list[dict[str, Any]]] = {}
-        self._container = None
+        self._db = get_firestore_client()
+        self._mode = "firestore" if self._db is not None else "memory"
+        self._collection_name = os.getenv("FIRESTORE_RESUME_COLLECTION", "resumes").strip() or "resumes"
 
-        endpoint = os.getenv("COSMOS_ENDPOINT", "").strip()
-        key = os.getenv("COSMOS_KEY", "").strip()
-        database_name = os.getenv("COSMOS_DATABASE", "hireflow-ai").strip()
-        container_name = os.getenv("COSMOS_RESUME_CONTAINER", "resume_records").strip() or "resume_records"
-
-        if not endpoint or not key:
-            return
-
-        try:
-            from azure.cosmos import CosmosClient, PartitionKey
-        except Exception:
-            return
-
-        try:
-            client = CosmosClient(endpoint, credential=key)
-            database = client.create_database_if_not_exists(id=database_name)
-            self._container = database.create_container_if_not_exists(
-                id=container_name,
-                partition_key=PartitionKey(path="/user_id"),
-            )
-            self._mode = "cosmos"
-        except Exception:
-            self._container = None
+    def _collection(self):
+        return self._db.collection(self._collection_name)
 
     def list_resumes(self, user_id: str) -> list[dict[str, Any]]:
         normalized = _normalize_user_id(user_id)
 
-        if self._mode == "cosmos" and self._container is not None:
+        if self._mode == "firestore" and self._db is not None:
             try:
-                items = list(
-                    self._container.query_items(
-                        query="SELECT * FROM c WHERE c.user_id = @user_id ORDER BY c.uploaded_at DESC",
-                        parameters=[{"name": "@user_id", "value": normalized}],
-                        partition_key=normalized,
-                    )
-                )
-                return items
+                docs = self._collection().where(filter=FieldFilter("user_id", "==", normalized)).stream()
+                records = [doc.to_dict() for doc in docs]
+                return sorted(records, key=lambda r: r.get("uploaded_at", ""), reverse=True)
             except Exception:
                 return []
 
@@ -96,15 +51,11 @@ class ResumeStore:
 
     def list_all_resumes(self) -> list[dict[str, Any]]:
         """List resumes across every user, for HR-side bulk analysis."""
-        if self._mode == "cosmos" and self._container is not None:
+        if self._mode == "firestore" and self._db is not None:
             try:
-                items = list(
-                    self._container.query_items(
-                        query="SELECT * FROM c ORDER BY c.uploaded_at DESC",
-                        enable_cross_partition_query=True,
-                    )
-                )
-                return items
+                docs = self._collection().stream()
+                records = [doc.to_dict() for doc in docs]
+                return sorted(records, key=lambda r: r.get("uploaded_at", ""), reverse=True)
             except Exception:
                 return []
 
@@ -119,7 +70,7 @@ class ResumeStore:
         container: str,
         content_type: str,
         size: int,
-    ) -> dict[str, Any]:
+    ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
         normalized = _normalize_user_id(user_id)
         existing = self.list_resumes(normalized)
 
@@ -135,16 +86,16 @@ class ResumeStore:
         }
 
         # Cap resumes per user; evict the oldest before adding a new one so a
-        # single account can't grow the container unbounded.
+        # single account can't grow the collection unbounded.
         overflow = existing[_MAX_RESUMES_PER_USER - 1 :]
 
-        if self._mode == "cosmos" and self._container is not None:
+        if self._mode == "firestore" and self._db is not None:
             for old in overflow:
                 try:
-                    self._container.delete_item(item=old["id"], partition_key=normalized)
+                    self._collection().document(old["id"]).delete()
                 except Exception:
                     pass
-            self._container.upsert_item(record)
+            self._collection().document(record["id"]).set(record)
         else:
             bucket = self._memory.setdefault(normalized, [])
             keep_ids = {r["id"] for r in overflow}
@@ -156,9 +107,13 @@ class ResumeStore:
     def get_resume(self, user_id: str, resume_id: str) -> dict[str, Any] | None:
         normalized = _normalize_user_id(user_id)
 
-        if self._mode == "cosmos" and self._container is not None:
+        if self._mode == "firestore" and self._db is not None:
             try:
-                return self._container.read_item(item=resume_id, partition_key=normalized)
+                doc = self._collection().document(resume_id).get()
+                if not doc.exists:
+                    return None
+                record = doc.to_dict()
+                return record if record.get("user_id") == normalized else None
             except Exception:
                 return None
 
@@ -170,9 +125,11 @@ class ResumeStore:
     def delete_resume(self, user_id: str, resume_id: str) -> bool:
         normalized = _normalize_user_id(user_id)
 
-        if self._mode == "cosmos" and self._container is not None:
+        if self._mode == "firestore" and self._db is not None:
+            if self.get_resume(normalized, resume_id) is None:
+                return False
             try:
-                self._container.delete_item(item=resume_id, partition_key=normalized)
+                self._collection().document(resume_id).delete()
                 return True
             except Exception:
                 return False

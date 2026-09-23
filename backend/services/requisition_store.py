@@ -3,31 +3,11 @@ from __future__ import annotations
 import os
 import uuid
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Any
 
+from google.cloud.firestore_v1.base_query import FieldFilter
 
-def _load_env_file() -> None:
-    candidates = [
-        Path(__file__).resolve().parents[1] / ".env",
-        Path(__file__).resolve().parents[2] / ".env",
-        Path.cwd() / ".env",
-    ]
-
-    for env_path in candidates:
-        if not env_path.exists():
-            continue
-
-        for raw_line in env_path.read_text(encoding="utf-8").splitlines():
-            line = raw_line.strip()
-            if not line or line.startswith("#") or "=" not in line:
-                continue
-
-            key, value = line.split("=", 1)
-            os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
-
-
-_load_env_file()
+from backend.services.firebase_client import get_firestore_client
 
 
 def _utc_now() -> str:
@@ -40,33 +20,15 @@ class RequisitionStore:
     Jan 2026 and again in Sept 2026 are two rows, not one overwritten row)."""
 
     def __init__(self) -> None:
-        self._mode = "memory"
         self._memory: dict[str, dict[str, Any]] = {}
-        self._container = None
+        self._db = get_firestore_client()
+        self._mode = "firestore" if self._db is not None else "memory"
+        self._collection_name = (
+            os.getenv("FIRESTORE_REQUISITION_COLLECTION", "requisitions").strip() or "requisitions"
+        )
 
-        endpoint = os.getenv("COSMOS_ENDPOINT", "").strip()
-        key = os.getenv("COSMOS_KEY", "").strip()
-        database_name = os.getenv("COSMOS_DATABASE", "hireflow-ai").strip()
-        container_name = os.getenv("COSMOS_REQUISITION_CONTAINER", "requisitions").strip() or "requisitions"
-
-        if not endpoint or not key:
-            return
-
-        try:
-            from azure.cosmos import CosmosClient, PartitionKey
-        except Exception:
-            return
-
-        try:
-            client = CosmosClient(endpoint, credential=key)
-            database = client.create_database_if_not_exists(id=database_name)
-            self._container = database.create_container_if_not_exists(
-                id=container_name,
-                partition_key=PartitionKey(path="/id"),
-            )
-            self._mode = "cosmos"
-        except Exception:
-            self._container = None
+    def _collection(self):
+        return self._db.collection(self._collection_name)
 
     def create_requisition(self, title: str, job_description: str, created_by: str = "") -> dict[str, Any]:
         now = _utc_now()
@@ -80,32 +42,28 @@ class RequisitionStore:
             "updated_at": now,
         }
 
-        if self._mode == "cosmos" and self._container is not None:
-            self._container.upsert_item(record)
+        if self._mode == "firestore" and self._db is not None:
+            self._collection().document(record["id"]).set(record)
         else:
             self._memory[record["id"]] = record
 
         return record
 
     def list_requisitions(self) -> list[dict[str, Any]]:
-        if self._mode == "cosmos" and self._container is not None:
+        if self._mode == "firestore" and self._db is not None:
             try:
-                items = list(
-                    self._container.query_items(
-                        query="SELECT * FROM c ORDER BY c.created_at DESC",
-                        enable_cross_partition_query=True,
-                    )
-                )
-                return items
+                records = [doc.to_dict() for doc in self._collection().stream()]
+                return sorted(records, key=lambda r: r.get("created_at", ""), reverse=True)
             except Exception:
                 return []
 
         return sorted(self._memory.values(), key=lambda r: r.get("created_at", ""), reverse=True)
 
     def get_requisition(self, requisition_id: str) -> dict[str, Any] | None:
-        if self._mode == "cosmos" and self._container is not None:
+        if self._mode == "firestore" and self._db is not None:
             try:
-                return self._container.read_item(item=requisition_id, partition_key=requisition_id)
+                doc = self._collection().document(requisition_id).get()
+                return doc.to_dict() if doc.exists else None
             except Exception:
                 return None
 
@@ -119,8 +77,8 @@ class RequisitionStore:
         record["status"] = status
         record["updated_at"] = _utc_now()
 
-        if self._mode == "cosmos" and self._container is not None:
-            self._container.upsert_item(record)
+        if self._mode == "firestore" and self._db is not None:
+            self._collection().document(requisition_id).set(record)
         else:
             self._memory[requisition_id] = record
 
@@ -128,37 +86,19 @@ class RequisitionStore:
 
 
 class PipelineStore:
-    """Per-requisition candidate pipeline records, partitioned by
-    requisition_id since nearly every query is scoped to one requisition."""
+    """Per-requisition candidate pipeline records, filtered by requisition_id
+    since nearly every query is scoped to one requisition."""
 
     def __init__(self) -> None:
-        self._mode = "memory"
         self._memory: dict[str, list[dict[str, Any]]] = {}
-        self._container = None
+        self._db = get_firestore_client()
+        self._mode = "firestore" if self._db is not None else "memory"
+        self._collection_name = (
+            os.getenv("FIRESTORE_PIPELINE_COLLECTION", "pipeline_records").strip() or "pipeline_records"
+        )
 
-        endpoint = os.getenv("COSMOS_ENDPOINT", "").strip()
-        key = os.getenv("COSMOS_KEY", "").strip()
-        database_name = os.getenv("COSMOS_DATABASE", "hireflow-ai").strip()
-        container_name = os.getenv("COSMOS_PIPELINE_CONTAINER", "pipeline_records").strip() or "pipeline_records"
-
-        if not endpoint or not key:
-            return
-
-        try:
-            from azure.cosmos import CosmosClient, PartitionKey
-        except Exception:
-            return
-
-        try:
-            client = CosmosClient(endpoint, credential=key)
-            database = client.create_database_if_not_exists(id=database_name)
-            self._container = database.create_container_if_not_exists(
-                id=container_name,
-                partition_key=PartitionKey(path="/requisition_id"),
-            )
-            self._mode = "cosmos"
-        except Exception:
-            self._container = None
+    def _collection(self):
+        return self._db.collection(self._collection_name)
 
     def create_records_bulk(self, requisition_id: str, records: list[dict[str, Any]]) -> list[dict[str, Any]]:
         now = _utc_now()
@@ -175,9 +115,11 @@ class PipelineStore:
             }
             created.append(record)
 
-        if self._mode == "cosmos" and self._container is not None:
+        if self._mode == "firestore" and self._db is not None:
+            batch = self._db.batch()
             for record in created:
-                self._container.upsert_item(record)
+                batch.set(self._collection().document(record["id"]), record)
+            batch.commit()
         else:
             bucket = self._memory.setdefault(requisition_id, [])
             bucket.extend(created)
@@ -185,16 +127,11 @@ class PipelineStore:
         return created
 
     def list_records(self, requisition_id: str) -> list[dict[str, Any]]:
-        if self._mode == "cosmos" and self._container is not None:
+        if self._mode == "firestore" and self._db is not None:
             try:
-                items = list(
-                    self._container.query_items(
-                        query="SELECT * FROM c WHERE c.requisition_id = @requisition_id ORDER BY c.score DESC",
-                        parameters=[{"name": "@requisition_id", "value": requisition_id}],
-                        partition_key=requisition_id,
-                    )
-                )
-                return items
+                docs = self._collection().where(filter=FieldFilter("requisition_id", "==", requisition_id)).stream()
+                records = [doc.to_dict() for doc in docs]
+                return sorted(records, key=lambda r: r.get("score", 0), reverse=True)
             except Exception:
                 return []
 
@@ -203,15 +140,10 @@ class PipelineStore:
 
     def list_all_records(self) -> list[dict[str, Any]]:
         """Records across every requisition, for the "all requisitions" dashboard view."""
-        if self._mode == "cosmos" and self._container is not None:
+        if self._mode == "firestore" and self._db is not None:
             try:
-                items = list(
-                    self._container.query_items(
-                        query="SELECT * FROM c ORDER BY c.score DESC",
-                        enable_cross_partition_query=True,
-                    )
-                )
-                return items
+                records = [doc.to_dict() for doc in self._collection().stream()]
+                return sorted(records, key=lambda r: r.get("score", 0), reverse=True)
             except Exception:
                 return []
 
@@ -219,9 +151,13 @@ class PipelineStore:
         return sorted(all_records, key=lambda r: r.get("score", 0), reverse=True)
 
     def get_record(self, requisition_id: str, pipeline_id: str) -> dict[str, Any] | None:
-        if self._mode == "cosmos" and self._container is not None:
+        if self._mode == "firestore" and self._db is not None:
             try:
-                return self._container.read_item(item=pipeline_id, partition_key=requisition_id)
+                doc = self._collection().document(pipeline_id).get()
+                if not doc.exists:
+                    return None
+                record = doc.to_dict()
+                return record if record.get("requisition_id") == requisition_id else None
             except Exception:
                 return None
 
@@ -241,8 +177,8 @@ class PipelineStore:
     def _save(self, requisition_id: str, record: dict[str, Any]) -> None:
         record["updated_at"] = _utc_now()
 
-        if self._mode == "cosmos" and self._container is not None:
-            self._container.upsert_item(record)
+        if self._mode == "firestore" and self._db is not None:
+            self._collection().document(record["id"]).set(record)
             return
 
         bucket = self._memory.setdefault(requisition_id, [])

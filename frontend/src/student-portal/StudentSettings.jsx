@@ -1,3 +1,5 @@
+import { useEffect, useState } from "react";
+
 export default function StudentSettings({
   accountInfo,
   currentUser,
@@ -11,7 +13,29 @@ export default function StudentSettings({
   selectedTheme,
   themeOptions,
   onSelectTheme,
+  geminiApiKey,
+  onSaveApiKey,
+  onClearApiKey,
 }) {
+  const [apiKeyDraft, setApiKeyDraft] = useState(geminiApiKey || "");
+  const [apiKeySaved, setApiKeySaved] = useState(false);
+
+  useEffect(() => {
+    setApiKeyDraft(geminiApiKey || "");
+  }, [geminiApiKey]);
+
+  function handleSaveApiKey(event) {
+    event.preventDefault();
+    onSaveApiKey?.(apiKeyDraft);
+    setApiKeySaved(true);
+    window.setTimeout(() => setApiKeySaved(false), 2000);
+  }
+
+  function handleClearApiKey() {
+    setApiKeyDraft("");
+    onClearApiKey?.();
+  }
+
   return (
     <section className="student-portal__settings">
       <div className="student-portal__settings-shell">
@@ -92,6 +116,36 @@ export default function StudentSettings({
                 </button>
               ))}
             </div>
+          </article>
+
+          <article className="student-portal__settings-card">
+            <h2>AI API key</h2>
+            <p className="student-portal__settings-note">
+              Bring your own Gemini API key to power resume analysis and cover letters. It's saved only in this
+              browser (never sent to our servers for storage) and attached to your AI requests as needed.
+            </p>
+            <form className="student-portal__settings-stack" onSubmit={handleSaveApiKey}>
+              <input
+                type="password"
+                autoComplete="off"
+                spellCheck={false}
+                placeholder="Paste your Gemini API key"
+                value={apiKeyDraft}
+                onChange={(event) => setApiKeyDraft(event.target.value)}
+                className="student-portal__settings-input"
+              />
+              <div className="student-portal__photo-actions">
+                <button className="student-portal__primary-pill" type="submit">
+                  Save key
+                </button>
+                {geminiApiKey ? (
+                  <button className="student-portal__ghost-button" type="button" onClick={handleClearApiKey}>
+                    Remove
+                  </button>
+                ) : null}
+                {apiKeySaved ? <span className="student-portal__settings-hint">Saved.</span> : null}
+              </div>
+            </form>
           </article>
 
         </div>
