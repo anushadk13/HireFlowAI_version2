@@ -62,10 +62,12 @@ HireFlow AI
 ├── backend
 │   ├── main.py
 │   ├── schemas.py
-│   ├── requirements.txt
 │   ├── routers/          # thin FastAPI route handlers
 │   ├── services/         # resume, HR, AI, storage, and auth logic
 │   └── tests/
+├── api/index.py          # Vercel entrypoint
+├── requirements.txt
+├── vercel.json
 ├── Dockerfile
 └── README.md
 ```
@@ -84,7 +86,7 @@ HireFlow AI
 ```bash
 python -m venv .venv
 source .venv/bin/activate
-pip install -r backend/requirements.txt
+pip install -r requirements.txt
 
 python -m uvicorn backend.main:app --reload --host 127.0.0.1 --port 8000
 ```
