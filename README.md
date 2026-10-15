@@ -1,5 +1,12 @@
 # HireFlow AI
 
+<img width="1599" height="815" alt="Screenshot 2026-10-15 at 2 43 37 PM" src="https://github.com/user-attachments/assets/7c159a39-5124-4252-84f9-0953cef9d632" />
+<img width="1599" height="815" alt="Screenshot 2026-10-15 at 2 45 16 PM" src="https://github.com/user-attachments/assets/cffcefc0-7d77-49b1-9309-ef00cbac78ed" />
+<img width="1599" height="815" alt="Screenshot 2026-10-15 at 2 45 22 PM" src="https://github.com/user-attachments/assets/eafed612-cb72-43ed-ba02-a1af1ad1c720" />
+<img width="1657" height="795" alt="Screenshot 2026-10-15 at 2 49 13 PM" src="https://github.com/user-attachments/assets/888b190d-4a76-40f0-b94a-f7feb0836399" />
+<img width="1657" height="795" alt="Screenshot 2026-10-15 at 2 49 24 PM" src="https://github.com/user-attachments/assets/92379d02-d380-4ff2-bb5c-ae988b12e009" />
+<img width="1657" height="795" alt="Screenshot 2026-10-15 at 2 49 45 PM" src="https://github.com/user-attachments/assets/fb1a6be1-01f3-4b3e-8800-1a61d49d518c" />
+
 An AI-assisted hiring platform with two portals: a **Student portal** for resume analysis and career guidance, and an **HR portal** for job-description parsing, candidate screening, and applicant ranking.
 
 - **Frontend:** React (Vite), Firebase Authentication
@@ -170,3 +177,4 @@ pytest backend/tests
 ## Deployment
 
 - `Dockerfile` builds a container that installs backend dependencies and serves the FastAPI app with `uvicorn` on port `8000`.
+  
