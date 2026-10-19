@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { signOut } from "firebase/auth";
 import { auth } from "../firebase.js";
+import { getGeminiApiKey, setGeminiApiKey as setStoredGeminiApiKey } from "../geminiKey.js";
 import "./HRPortal.css";
 
 const API_BASE = import.meta.env.VITE_API_BASE || "http://127.0.0.1:8000";
@@ -23,15 +24,7 @@ You will build internal tools, work with Docker and AWS, and collaborate with pr
 Experience with APIs, analytics dashboards, and scalable workflows is preferred.
 Bachelor's degree or equivalent experience required.`;
 
-// Bring-your-own-key: shares the same browser-local key the student portal's
-// settings page saves under "hireflow-gemini-api-key" — the backend never
-// persists it, so there's nothing to sync beyond reading it fresh per call.
-function getStoredGeminiApiKey() {
-  if (typeof window === "undefined") {
-    return "";
-  }
-  return window.localStorage.getItem("hireflow-gemini-api-key") || "";
-}
+// Bring-your-own-key: kept in sessionStorage only (see ../geminiKey.js).
 
 // Email/password sign-in never creates a Firebase Auth session (only Google
 // does), so the account's real name/email/role has to come from the account
@@ -44,7 +37,7 @@ function getStoredAccountEmail() {
 }
 
 async function postJSON(path, body) {
-  const apiKey = getStoredGeminiApiKey();
+  const apiKey = getGeminiApiKey();
   const res = await fetch(`${API_BASE}${path}`, {
     method: "POST",
     headers: {
@@ -284,8 +277,8 @@ export default function HRPortal({ onBack }) {
   const [accountRecord, setAccountRecord] = useState(null);
 
   // Bring-your-own AI key (shared with the student portal's saved key; see
-  // getStoredGeminiApiKey/postJSON above — the backend never persists it).
-  const [geminiApiKey, setGeminiApiKey] = useState(getStoredGeminiApiKey);
+  // geminiKey.js/postJSON above — sessionStorage only).
+  const [geminiApiKey, setGeminiApiKey] = useState(getGeminiApiKey);
   const [apiKeyDraft, setApiKeyDraft] = useState(geminiApiKey);
   const [apiKeySaved, setApiKeySaved] = useState(false);
 
@@ -345,16 +338,7 @@ export default function HRPortal({ onBack }) {
   }, []);
 
   useEffect(() => {
-    if (typeof window === "undefined") {
-      return;
-    }
-
-    if (geminiApiKey) {
-      window.localStorage.setItem("hireflow-gemini-api-key", geminiApiKey);
-      return;
-    }
-
-    window.localStorage.removeItem("hireflow-gemini-api-key");
+    setStoredGeminiApiKey(geminiApiKey);
   }, [geminiApiKey]);
 
   function handleSaveApiKey(event) {

@@ -4,6 +4,7 @@ import LiveCoverLetter from "./LiveCoverLetter.jsx";
 import StudentSettings from "./StudentSettings.jsx";
 import ResumeLibrary from "./ResumeLibrary.jsx";
 import { auth } from "../firebase.js";
+import { getGeminiApiKey, setGeminiApiKey as setStoredGeminiApiKey } from "../geminiKey.js";
 import "./StudentPortal.css";
 
 const API_BASE = import.meta.env.VITE_API_BASE || "http://127.0.0.1:8000";
@@ -73,11 +74,8 @@ function getStoredProfilePhoto() {
 }
 
 // Bring-your-own-key: read fresh on every call so postJSON always sends
-// whatever is currently saved, without threading the key through every
-// call site. Only ever kept in the browser — the backend never persists it.
-function getStoredGeminiApiKey() {
-  return getStoredValue("hireflow-gemini-api-key", "");
-}
+// the current key without threading it through every call site. Held in
+// memory only (see ../geminiKey.js) — never persisted anywhere.
 
 // Email/password sign-in never creates a Firebase Auth session (only Google
 // does), so the account's real name/email/role has to come from the account
@@ -90,7 +88,7 @@ function getStoredAccountEmail() {
 }
 
 async function postJSON(path, body) {
-  const apiKey = getStoredGeminiApiKey();
+  const apiKey = getGeminiApiKey();
   const res = await fetch(`${API_BASE}${path}`, {
     method: "POST",
     headers: {
@@ -248,7 +246,7 @@ export default function StudentPortal({ onSignOut }) {
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   const [selectedTheme, setSelectedTheme] = useState(getInitialTheme);
   const [profilePhoto, setProfilePhoto] = useState(getStoredProfilePhoto);
-  const [geminiApiKey, setGeminiApiKey] = useState(getStoredGeminiApiKey);
+  const [geminiApiKey, setGeminiApiKey] = useState(getGeminiApiKey);
   const [resume, setResume] = useState("");
   const [jobDescription, setJobDescription] = useState("");
   const [resumeMode, setResumeMode] = useState("upload");
@@ -401,16 +399,7 @@ export default function StudentPortal({ onSignOut }) {
   }, [profilePhoto]);
 
   useEffect(() => {
-    if (typeof window === "undefined") {
-      return;
-    }
-
-    if (geminiApiKey) {
-      window.localStorage.setItem("hireflow-gemini-api-key", geminiApiKey);
-      return;
-    }
-
-    window.localStorage.removeItem("hireflow-gemini-api-key");
+    setStoredGeminiApiKey(geminiApiKey);
   }, [geminiApiKey]);
 
   useEffect(() => {

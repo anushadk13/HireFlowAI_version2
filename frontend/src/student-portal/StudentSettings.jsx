@@ -121,8 +121,8 @@ export default function StudentSettings({
           <article className="student-portal__settings-card">
             <h2>AI API key</h2>
             <p className="student-portal__settings-note">
-              Bring your own Gemini API key to power resume analysis and cover letters. It's saved only in this
-              browser (never sent to our servers for storage) and attached to your AI requests as needed.
+              Bring your own Gemini API key to power resume analysis and cover letters. It's kept only for this
+              browser session (never sent to our servers for storage) and attached to your AI requests as needed.
             </p>
             <form className="student-portal__settings-stack" onSubmit={handleSaveApiKey}>
               <input
