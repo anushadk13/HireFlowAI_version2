@@ -22,11 +22,12 @@ def health() -> dict[str, str]:
 @router.get("/api/health/storage")
 def storage_health() -> dict[str, str]:
     """Report whether Firestore is reachable and writable (no secrets exposed)."""
+    from backend.services import firebase_client
     from backend.services.firebase_client import get_firestore_client
 
     db = get_firestore_client()
     if db is None:
-        return {"mode": "memory", "detail": "Firebase not initialised; check FIREBASE_SERVICE_ACCOUNT_JSON"}
+        return {"mode": "memory", "detail": firebase_client.init_error or "unknown"}
     try:
         db.collection("_health").document("ping").set({"ok": True})
         return {"mode": "firestore", "project": str(db.project), "write": "ok"}
