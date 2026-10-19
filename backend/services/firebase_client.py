@@ -52,6 +52,10 @@ def _initialize() -> None:
     )
     storage_bucket_name = os.getenv("FIREBASE_STORAGE_BUCKET", "").strip()
 
+    # Tolerate the JSON being pasted into a *_PATH / GOOGLE_APPLICATION_CREDENTIALS variable.
+    if not service_account_json and service_account_path.startswith("{"):
+        service_account_json, service_account_path = service_account_path, ""
+
     if not service_account_json and not service_account_path:
         init_error = "no credential env var set (FIREBASE_SERVICE_ACCOUNT_JSON / _PATH / GOOGLE_APPLICATION_CREDENTIALS)"
         return
@@ -78,8 +82,8 @@ def _initialize() -> None:
         if storage_bucket_name:
             _storage_bucket = storage.bucket()
     except Exception as exc:  # noqa: BLE001 - a bad config must never crash the app at import time
-        init_error = f"init failed: {type(exc).__name__}: {str(exc)[:200]}"
-        logger.warning("Failed to initialize Firebase: %s", exc)
+        init_error = f"init failed: {type(exc).__name__} (see server logs)"
+        logger.warning("Failed to initialize Firebase: %s", type(exc).__name__)
         _firestore_client = None
         _storage_bucket = None
 

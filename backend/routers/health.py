@@ -32,5 +32,5 @@ def storage_health() -> dict[str, str]:
         db.collection("_health").document("ping").set({"ok": True})
         return {"mode": "firestore", "project": str(db.project), "write": "ok"}
     except Exception as exc:  # noqa: BLE001
-        return {"mode": "firestore", "write": "failed", "error": f"{type(exc).__name__}: {str(exc)[:300]}"}
+        return {"mode": "firestore", "write": "failed", "error": type(exc).__name__}
 
