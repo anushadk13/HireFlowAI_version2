@@ -4,19 +4,11 @@ import json
 import logging
 from typing import Any
 
-from google import genai
-from google.genai import types
-
+from backend.services.llm import LLMConfig, LLMError, generate
 from backend.services.pii import scrub_pii
 from backend.services.prompts import RESUME_SCORING_PROMPT
 
 logger = logging.getLogger(__name__)
-
-# Note: pro-tier models (e.g. gemini-3.1-pro-preview) return 429 RESOURCE_EXHAUSTED on
-# free-tier API keys — no quota, not just access. gemini-2.5-flash-lite is also deprecated
-# for new keys (404); gemini-3.5-flash-lite is its live successor, confirmed working
-# against this project's key. Switch to a pro-tier model if the key's plan is upgraded.
-MODEL = "gemini-3.5-flash-lite"
 
 # Stage 3 weights — published and easy to tune per job. Must sum to 100.
 WEIGHTS = {
@@ -107,20 +99,15 @@ def _minimum_years_gate(candidate_years: float | None, minimum_years: float | No
     }
 
 
-def score_resume_with_ai(resume_text: str, job_description: str, api_key: str) -> dict[str, Any] | None:
+def score_resume_with_ai(resume_text: str, job_description: str, llm: LLMConfig) -> dict[str, Any] | None:
     try:
         scrubbed_resume = scrub_pii(resume_text)
-        client = genai.Client(api_key=api_key)
-        response = client.models.generate_content(
-            model=MODEL,
-            contents=RESUME_SCORING_PROMPT.format(resume_text=scrubbed_resume, job_description=job_description),
-            config=types.GenerateContentConfig(
-                temperature=0,
-                max_output_tokens=4096,
-                response_mime_type="application/json",
-            ),
+        text = generate(
+            llm,
+            RESUME_SCORING_PROMPT.format(resume_text=scrubbed_resume, job_description=job_description),
+            max_tokens=4096,
+            json_mode=True,
         )
-        text = response.text or ""
         raw = json.loads(_strip_code_fence(text))
         if not isinstance(raw, dict):
             raise ScoringError("Model did not return a JSON object")
@@ -196,6 +183,8 @@ def score_resume_with_ai(resume_text: str, job_description: str, api_key: str) -
             "skills_match_score": round((required_score * WEIGHTS["required_skills"] + preferred_score * WEIGHTS["preferred_skills"]) / (WEIGHTS["required_skills"] + WEIGHTS["preferred_skills"])),
             "experience_score": experience_score,
         }
+    except LLMError:
+        raise
     except Exception as exc:  # noqa: BLE001 - any failure here should fall back to the regex scorer
         logger.warning("AI resume scoring failed, falling back to regex scorer: %s", exc)
         return None

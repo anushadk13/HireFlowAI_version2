@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-import os
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
-from fastapi import APIRouter, Header, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 
 from backend.schemas import (
     AssessmentInput,
@@ -31,6 +30,7 @@ from backend.services.email_templates import (
     render_rejection_email,
 )
 from backend.services.hr import auto_evaluation, fraud_detection, interview_slots, parse_jd, project_evaluation
+from backend.services.llm import LLMConfig, LLMError, get_llm_config
 from backend.services.pipeline import assign_initial_stage
 from backend.services.requisition_store import pipeline_store, requisition_store
 from backend.services.resume import ats_score
@@ -43,11 +43,13 @@ router = APIRouter()
 @router.post("/api/hr/parse-jd")
 def api_parse_jd(
     payload: JobDescriptionInput,
-    x_gemini_api_key: str = Header(default="", alias="X-Gemini-Api-Key"),
+    llm: LLMConfig | None = Depends(get_llm_config),
 ) -> dict[str, Any]:
-    api_key = x_gemini_api_key.strip() or os.getenv("GEMINI_API_KEY", "").strip()
-    if api_key:
-        ai_result = extract_jd_with_ai(payload.job_description, api_key)
+    if llm:
+        try:
+            ai_result = extract_jd_with_ai(payload.job_description, llm)
+        except LLMError as exc:
+            return {**parse_jd(payload.job_description), "ai_warning": f"{exc} Using basic parsing instead."}
         if ai_result is not None:
             return ai_result
     return parse_jd(payload.job_description)
@@ -56,9 +58,9 @@ def api_parse_jd(
 @router.post("/api/hr/screen")
 def api_hr_screen(
     payload: ResumeInput,
-    x_gemini_api_key: str = Header(default="", alias="X-Gemini-Api-Key"),
+    llm: LLMConfig | None = Depends(get_llm_config),
 ) -> dict[str, Any]:
-    analysis = ats_score(payload.resume_text, payload.job_description, api_key=x_gemini_api_key)
+    analysis = ats_score(payload.resume_text, payload.job_description, llm=llm)
     project = project_evaluation(payload.resume_text)
     fraud = fraud_detection(payload.resume_text)
     return {
@@ -90,12 +92,12 @@ def api_hr_resumes() -> dict[str, Any]:
     }
 
 
-def _score_candidate(candidate: dict[str, Any], job_description: str, api_key: str = "") -> dict[str, Any]:
+def _score_candidate(candidate: dict[str, Any], job_description: str, llm: LLMConfig | None = None) -> dict[str, Any]:
     text = candidate.get("resume_text", "")
     name = candidate.get("name", "Candidate")
     # use_ai=True: falls back to the regex scorer automatically (see ats_score) if
     # no API key is available or the AI call fails.
-    analysis = ats_score(text, job_description, use_ai=True, api_key=api_key)
+    analysis = ats_score(text, job_description, use_ai=True, llm=llm)
     project = project_evaluation(text)
     total = min(100, round(analysis["ats_score"] * 0.65 + project["score"] * 0.35))
     return {
@@ -106,6 +108,7 @@ def _score_candidate(candidate: dict[str, Any], job_description: str, api_key: s
         "matched_skills": analysis["matched_skills"],
         "projects": project["tier"],
         "scoring_method": analysis.get("scoring_method", "regex_fallback"),
+        "ai_warning": analysis.get("ai_warning", ""),
         # Identity passthrough so requisition-scoped ranking can attach a real
         # candidate email for blob-sourced resumes (see resume_store: user_id
         # there is the candidate's account email). Local-file candidates have
@@ -158,26 +161,27 @@ def _persist_ranked_candidates(requisition_id: str, ranked: list[dict[str, Any]]
 @router.post("/api/hr/rank")
 def api_rank_candidates(
     payload: CandidateBatchInput,
-    x_gemini_api_key: str = Header(default="", alias="X-Gemini-Api-Key"),
+    llm: LLMConfig | None = Depends(get_llm_config),
 ) -> dict[str, Any]:
     # Each candidate's AI call is a blocking network request, so score candidates
     # concurrently instead of one-by-one to keep total request latency reasonable.
     with ThreadPoolExecutor(max_workers=min(8, len(payload.candidates)) or 1) as pool:
         ranked = list(
-            pool.map(lambda c: _score_candidate(c, payload.job_description, x_gemini_api_key), payload.candidates)
+            pool.map(lambda c: _score_candidate(c, payload.job_description, llm), payload.candidates)
         )
     ranked.sort(key=lambda item: item["score"], reverse=True)
+    ai_warning = next((item["ai_warning"] for item in ranked if item.get("ai_warning")), "")
 
     requisition_id = payload.requisition_id.strip()
     if not requisition_id:
         # No requisition given: pure ephemeral scoring, nothing persisted (today's behavior).
-        return {"ranked": ranked}
+        return {"ranked": ranked, "ai_warning": ai_warning}
 
     if requisition_store.get_requisition(requisition_id) is None:
         raise HTTPException(status_code=404, detail="Requisition not found")
 
     _persist_ranked_candidates(requisition_id, ranked)
-    return {"requisition_id": requisition_id, "ranked": ranked}
+    return {"requisition_id": requisition_id, "ranked": ranked, "ai_warning": ai_warning}
 
 
 @router.post("/api/hr/assessment")

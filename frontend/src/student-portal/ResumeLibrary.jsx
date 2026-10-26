@@ -1,4 +1,41 @@
-import { useRef } from "react";
+import { useRef, useState } from "react";
+
+const MAX_RESUMES = 5;
+
+const FEATURES = [
+  {
+    title: "Secure storage",
+    copy: "Your files are private to your account.",
+    path: "M12 3l7 3v5c0 4.4-2.9 8.3-7 10-4.1-1.7-7-5.6-7-10V6l7-3zm-1 11.2l5-5-1.4-1.4-3.6 3.6-1.6-1.6-1.4 1.4 3 3z",
+  },
+  {
+    title: "Quick access",
+    copy: "Reuse a saved resume in one click.",
+    path: "M13 2L4 14h6l-1 8 9-12h-6l1-8z",
+  },
+  {
+    title: "Multiple formats",
+    copy: "PDF, DOCX, TXT and Markdown.",
+    path: "M6 2h8l6 6v14H6V2zm7 1.5V9h5.5L13 3.5zM9 13h8v1.5H9V13zm0 3.5h8V18H9v-1.5z",
+  },
+  {
+    title: "Easy to manage",
+    copy: "Keep up to five resumes ready to go.",
+    path: "M4 6h16v2H4V6zm0 5h16v2H4v-2zm0 5h10v2H4v-2z",
+  },
+];
+
+function fileKind(name = "") {
+  const ext = name.split(".").pop()?.toLowerCase();
+  return ["pdf", "docx", "txt", "md"].includes(ext) ? ext.toUpperCase() : "FILE";
+}
+
+function formatDate(value) {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime())
+    ? ""
+    : date.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+}
 
 export default function ResumeLibrary({
   uploadedResumes = [],
@@ -7,350 +44,126 @@ export default function ResumeLibrary({
   onSelectResume,
   onNavigateToAnalyzer,
 }) {
-  const resumeLibraryInputRef = useRef(null);
+  const inputRef = useRef(null);
+  const [dragging, setDragging] = useState(false);
 
-  const handleAddResumeToLibrary = async (event) => {
+  const handleAdd = async (event) => {
     if (onAddResume) {
       await onAddResume(event);
     }
   };
 
+  const handleDrop = (event) => {
+    event.preventDefault();
+    setDragging(false);
+    const files = event.dataTransfer?.files;
+    if (files?.length) {
+      handleAdd({ target: { files, value: "" } });
+    }
+  };
+
+  const handleUse = async (id) => {
+    await onSelectResume?.(id);
+    onNavigateToAnalyzer?.();
+  };
+
+  const atLimit = uploadedResumes.length >= MAX_RESUMES;
+
   return (
-    <section className="student-portal__cover-page" style={{ background: "#f8f9fc", minHeight: "100vh" }}>
-      <header style={{ padding: "24px 24px 20px", textAlign: "center" }}>
-        <div
-          style={{
-            fontSize: "0.65rem",
-            fontWeight: "600",
-            letterSpacing: "1.5px",
-            color: "#64748b",
-            marginBottom: "8px",
-            textTransform: "uppercase",
-          }}
-        >
-          YOUR CAREER, ORGANIZED
-        </div>
-        <h1
-          style={{
-            fontSize: "2rem",
-            fontWeight: "700",
-            color: "#1e293b",
-            marginBottom: "8px",
-            lineHeight: "1.1",
-          }}
-        >
-          Resume <span style={{ color: "#4f46e5" }}>Library</span>
-        </h1>
-        <p
-          style={{
-            fontSize: "0.95rem",
-            color: "#64748b",
-            maxWidth: "500px",
-            margin: "0 auto",
-          }}
-        >
-          Upload and manage your resumes for quick access in cover letter generation.
-        </p>
-      </header>
-
-      {/* Feature Cards */}
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(4, 1fr)",
-          gap: "12px",
-          maxWidth: "800px",
-          margin: "0 auto 24px",
-          padding: "0 24px",
-        }}
-      >
-        <div
-          style={{
-            background: "linear-gradient(135deg, #f8f9fc 0%, #eef2f7 100%)",
-            padding: "16px 12px",
-            borderRadius: "12px",
-            textAlign: "center",
-            boxShadow: "0 2px 4px rgba(0,0,0,0.06)",
-            border: "1px solid rgba(79, 70, 229, 0.08)",
-          }}
-        >
-          <div
-            style={{
-              width: "40px",
-              height: "40px",
-              borderRadius: "50%",
-              background: "rgba(79, 70, 229, 0.1)",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              margin: "0 auto 10px",
-              fontSize: "18px",
-            }}
-          >
-            🔒
+    <section className="student-portal__library">
+      <div className="student-portal__library-shell">
+        <header className="student-portal__library-header">
+          <div>
+            <h1>Resume library</h1>
+            <p>Upload and manage your resumes for quick access in the analyzer and cover letter generator.</p>
           </div>
-          <h3 style={{ fontSize: "0.85rem", fontWeight: "700", color: "#1e293b", marginBottom: "4px" }}>
-            Secure Storage
-          </h3>
-          <p style={{ fontSize: "0.75rem", color: "#64748b", lineHeight: "1.4" }}>Your files are safe and private</p>
-        </div>
+          <span className="student-portal__library-count">
+            {uploadedResumes.length} of {MAX_RESUMES} saved
+          </span>
+        </header>
 
-        <div
-          style={{
-            background: "linear-gradient(135deg, #f8f9fc 0%, #eef2f7 100%)",
-            padding: "16px 12px",
-            borderRadius: "12px",
-            textAlign: "center",
-            boxShadow: "0 2px 4px rgba(0,0,0,0.06)",
-            border: "1px solid rgba(79, 70, 229, 0.08)",
-          }}
-        >
-          <div
-            style={{
-              width: "40px",
-              height: "40px",
-              borderRadius: "50%",
-              background: "rgba(79, 70, 229, 0.1)",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              margin: "0 auto 10px",
-              fontSize: "18px",
-            }}
-          >
-            ⚡
-          </div>
-          <h3 style={{ fontSize: "0.85rem", fontWeight: "700", color: "#1e293b", marginBottom: "4px" }}>
-            Quick Access
-          </h3>
-          <p style={{ fontSize: "0.75rem", color: "#64748b", lineHeight: "1.4" }}>Use anytime, anywhere</p>
-        </div>
+        <ul className="student-portal__library-features">
+          {FEATURES.map((feature) => (
+            <li key={feature.title}>
+              <span className="student-portal__library-feature-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
+                  <path d={feature.path} />
+                </svg>
+              </span>
+              <div>
+                <strong>{feature.title}</strong>
+                <span>{feature.copy}</span>
+              </div>
+            </li>
+          ))}
+        </ul>
 
-        <div
-          style={{
-            background: "linear-gradient(135deg, #f8f9fc 0%, #eef2f7 100%)",
-            padding: "16px 12px",
-            borderRadius: "12px",
-            textAlign: "center",
-            boxShadow: "0 2px 4px rgba(0,0,0,0.06)",
-            border: "1px solid rgba(79, 70, 229, 0.08)",
-          }}
-        >
-          <div
-            style={{
-              width: "40px",
-              height: "40px",
-              borderRadius: "50%",
-              background: "rgba(79, 70, 229, 0.1)",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              margin: "0 auto 10px",
-              fontSize: "18px",
-            }}
-          >
-            📄
-          </div>
-          <h3 style={{ fontSize: "0.85rem", fontWeight: "700", color: "#1e293b", marginBottom: "4px" }}>
-            Multiple Formats
-          </h3>
-          <p style={{ fontSize: "0.75rem", color: "#64748b", lineHeight: "1.4" }}>PDF, DOCX, TXT and Markdown</p>
-        </div>
-
-        <div
-          style={{
-            background: "linear-gradient(135deg, #f8f9fc 0%, #eef2f7 100%)",
-            padding: "16px 12px",
-            borderRadius: "12px",
-            textAlign: "center",
-            boxShadow: "0 2px 4px rgba(0,0,0,0.06)",
-            border: "1px solid rgba(79, 70, 229, 0.08)",
-          }}
-        >
-          <div
-            style={{
-              width: "40px",
-              height: "40px",
-              borderRadius: "50%",
-              background: "rgba(79, 70, 229, 0.1)",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              margin: "0 auto 10px",
-              fontSize: "18px",
-            }}
-          >
-            ❤️
-          </div>
-          <h3 style={{ fontSize: "0.85rem", fontWeight: "700", color: "#1e293b", marginBottom: "4px" }}>
-            Easy to Manage
-          </h3>
-          <p style={{ fontSize: "0.75rem", color: "#64748b", lineHeight: "1.4" }}>
-            Organize, update and keep it ready
-          </p>
-        </div>
-      </div>
-
-      <div style={{ maxWidth: "900px", margin: "0 auto", padding: "0 24px 32px" }}>
         <input
-          ref={resumeLibraryInputRef}
+          ref={inputRef}
           className="student-portal__hidden-input"
           type="file"
           accept=".pdf,.docx,.txt,.md,text/plain,text/markdown,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-          onChange={handleAddResumeToLibrary}
+          onChange={handleAdd}
         />
 
-        {/* Resumes Flex Layout with Add Card */}
-        <div
-          style={{
-            display: "flex",
-            flexWrap: "wrap",
-            gap: "16px",
+        <button
+          type="button"
+          className={`student-portal__library-drop${dragging ? " is-dragging" : ""}`}
+          onClick={() => inputRef.current?.click()}
+          onDragOver={(event) => {
+            event.preventDefault();
+            setDragging(true);
           }}
+          onDragLeave={() => setDragging(false)}
+          onDrop={handleDrop}
         >
-          {/* Uploaded Resume Cards */}
-          {uploadedResumes.map((resume) => (
-            <div
-              key={resume.id}
-              style={{
-                flex: "0 0 280px",
-                padding: "20px",
-                border: "1px solid rgba(130, 138, 180, 0.2)",
-                borderRadius: "12px",
-                background: "#ffffff",
-                boxShadow: "0 2px 8px rgba(0,0,0,0.06)",
-                transition: "all 0.2s ease",
-                display: "flex",
-                flexDirection: "column",
-                position: "relative",
-                minHeight: "180px",
-              }}
-            >
-              <button
-                type="button"
-                onClick={() => onDeleteResume?.(resume.id)}
-                style={{
-                  position: "absolute",
-                  top: "12px",
-                  right: "12px",
-                  width: "32px",
-                  height: "32px",
-                  borderRadius: "6px",
-                  background: "transparent",
-                  border: "none",
-                  color: "#94a3b8",
-                  cursor: "pointer",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  transition: "all 0.2s ease",
-                  padding: "0",
-                }}
-                title="Delete resume"
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.color = "#ef4444";
-                  e.currentTarget.style.background = "rgba(239, 68, 68, 0.08)";
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.color = "#94a3b8";
-                  e.currentTarget.style.background = "transparent";
-                }}
-              >
-                <svg
-                  width="20"
-                  height="20"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <polyline points="3 6 5 6 21 6"></polyline>
-                  <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-                  <line x1="10" y1="11" x2="10" y2="17"></line>
-                  <line x1="14" y1="11" x2="14" y2="17"></line>
-                </svg>
-              </button>
-              <div>
-                <div
-                  style={{
-                    fontWeight: "600",
-                    color: "#1e293b",
-                    marginBottom: "6px",
-                    fontSize: "1rem",
-                    wordBreak: "break-word",
-                    paddingRight: "40px",
-                  }}
-                >
-                  📄 {resume.name}
-                </div>
-                <div style={{ fontSize: "0.8rem", color: "#64748b" }}>{resume.size}</div>
-                <div style={{ fontSize: "0.75rem", color: "#94a3b8", marginTop: "4px" }}>
-                  {new Date(resume.uploadDate).toLocaleDateString()}
-                </div>
-              </div>
-            </div>
-          ))}
+          <span className="student-portal__library-drop-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M12 16V4M7 9l5-5 5 5M4 20h16" />
+            </svg>
+          </span>
+          <span className="student-portal__library-drop-text">
+            <strong>Click to upload</strong> or drag and drop a resume
+            <small>PDF, DOCX, TXT or Markdown{atLimit ? ` · the oldest is replaced after ${MAX_RESUMES}` : ""}</small>
+          </span>
+        </button>
 
-          {/* Add New Resume Card */}
-          <div
-            onClick={() => resumeLibraryInputRef.current?.click()}
-            style={{
-              flex: "0 0 280px",
-              padding: "20px",
-              border: "2px dashed rgba(79, 70, 229, 0.3)",
-              borderRadius: "12px",
-              background: "rgba(79, 70, 229, 0.02)",
-              cursor: "pointer",
-              transition: "all 0.2s ease",
-              display: "flex",
-              flexDirection: "column",
-              alignItems: "center",
-              justifyContent: "center",
-              minHeight: "180px",
-              textAlign: "center",
-            }}
-            role="button"
-            tabIndex={0}
-          >
-            <div
-              style={{
-                width: "50px",
-                height: "50px",
-                borderRadius: "50%",
-                background: "#4f46e5",
-                color: "#ffffff",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                fontSize: "28px",
-                marginBottom: "12px",
-                fontWeight: "300",
-              }}
-            >
-              +
-            </div>
-            <p
-              style={{
-                fontSize: "0.9rem",
-                color: "#4f46e5",
-                fontWeight: "600",
-              }}
-            >
-              Add New Resume
-            </p>
-            <p
-              style={{
-                fontSize: "0.75rem",
-                color: "#94a3b8",
-                marginTop: "4px",
-              }}
-            >
-              Click to upload
-            </p>
-          </div>
-        </div>
+        {uploadedResumes.length === 0 ? (
+          <p className="student-portal__library-empty">No resumes yet. Upload one to see it here.</p>
+        ) : (
+          <ul className="student-portal__library-list">
+            {uploadedResumes.map((resume) => (
+              <li key={resume.id} className="student-portal__library-item">
+                <span className="student-portal__library-badge" aria-hidden="true">
+                  {fileKind(resume.name)}
+                </span>
+                <div className="student-portal__library-meta">
+                  <strong title={resume.name}>{resume.name}</strong>
+                  <span>
+                    {[resume.size, formatDate(resume.uploadDate)].filter(Boolean).join(" · ")}
+                  </span>
+                </div>
+                <div className="student-portal__library-actions">
+                  <button className="student-portal__primary-pill" type="button" onClick={() => handleUse(resume.id)}>
+                    Use resume
+                  </button>
+                  <button
+                    className="student-portal__library-delete"
+                    type="button"
+                    onClick={() => onDeleteResume?.(resume.id)}
+                    aria-label={`Delete ${resume.name}`}
+                    title="Delete resume"
+                  >
+                    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />
+                      <path d="M10 11v6M14 11v6" />
+                    </svg>
+                  </button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
     </section>
   );
