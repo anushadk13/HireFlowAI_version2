@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 import math
-import os
 from typing import Any
 
 from backend.services.cover_letter_ai import generate_cover_letter_with_ai
 from backend.services.data import ROLE_PROFILES
+from backend.services.llm import LLMConfig, LLMError
 from backend.services.resume_scoring import score_resume_with_ai
 from backend.services.text_utils import (
     count_bullets,
@@ -82,15 +82,20 @@ def _ats_score_regex(resume_text: str, job_description: str = "") -> dict[str, A
     }
 
 
-def ats_score(resume_text: str, job_description: str = "", *, use_ai: bool = True, api_key: str = "") -> dict[str, Any]:
+def ats_score(resume_text: str, job_description: str = "", *, use_ai: bool = True, llm: LLMConfig | None = None) -> dict[str, Any]:
     result: dict[str, Any] | None = None
-    resolved_key = api_key.strip() or os.getenv("GEMINI_API_KEY", "").strip()
-    if use_ai and resolved_key and job_description.strip():
-        result = score_resume_with_ai(resume_text, job_description, resolved_key)
+    ai_warning = ""
+    if use_ai and llm and job_description.strip():
+        try:
+            result = score_resume_with_ai(resume_text, job_description, llm)
+        except LLMError as exc:
+            ai_warning = f"{exc} Showing the basic keyword score instead."
 
     if result is None:
         result = _ats_score_regex(resume_text, job_description)
 
+    if ai_warning:
+        result["ai_warning"] = ai_warning
     result["keywords_score"] = _keywords_score(resume_text, job_description)
     result["formatting_score"] = _formatting_score(resume_text)
     result.setdefault("grammar_notes", grammar_notes(resume_text))
@@ -156,15 +161,17 @@ class CoverLetterError(Exception):
     pass
 
 
-def generate_cover_letter(resume_text: str, job_description: str = "", additional_context: str = "", api_key: str = "") -> str:
+def generate_cover_letter(resume_text: str, job_description: str = "", additional_context: str = "", llm: LLMConfig | None = None) -> str:
     if not job_description.strip():
         raise CoverLetterError("A job description is required to generate a tailored cover letter.")
 
-    resolved_key = api_key.strip() or os.getenv("GEMINI_API_KEY", "").strip()
-    if not resolved_key:
-        raise CoverLetterError("Cover letter generation is not configured (missing GEMINI_API_KEY).")
+    if not llm:
+        raise CoverLetterError("Add an AI API key in Settings to generate a cover letter.")
 
-    letter = generate_cover_letter_with_ai(resume_text, job_description, additional_context, resolved_key)
+    try:
+        letter = generate_cover_letter_with_ai(resume_text, job_description, additional_context, llm)
+    except LLMError as exc:
+        raise CoverLetterError(str(exc)) from exc
     if not letter:
         raise CoverLetterError("Cover letter generation failed. Please try again.")
     return letter

@@ -4,7 +4,8 @@ import LiveCoverLetter from "./LiveCoverLetter.jsx";
 import StudentSettings from "./StudentSettings.jsx";
 import ResumeLibrary from "./ResumeLibrary.jsx";
 import { auth } from "../firebase.js";
-import { getGeminiApiKey, setGeminiApiKey as setStoredGeminiApiKey } from "../geminiKey.js";
+import { aiHeaders, clearSessionData } from "../aiSettings.js";
+import { usePersistedState } from "../sessionState.js";
 import "./StudentPortal.css";
 
 const API_BASE = import.meta.env.VITE_API_BASE || "http://127.0.0.1:8000";
@@ -73,9 +74,8 @@ function getStoredProfilePhoto() {
   return getStoredValue("hireflow-student-profile-photo", "");
 }
 
-// Bring-your-own-key: read fresh on every call so postJSON always sends
-// the current key without threading it through every call site. Held in
-// memory only (see ../geminiKey.js) — never persisted anywhere.
+// Bring-your-own-key: aiHeaders() reads the saved key fresh on every call so
+// requests always carry the current provider/model (see ../aiSettings.js).
 
 // Email/password sign-in never creates a Firebase Auth session (only Google
 // does), so the account's real name/email/role has to come from the account
@@ -88,12 +88,11 @@ function getStoredAccountEmail() {
 }
 
 async function postJSON(path, body) {
-  const apiKey = getGeminiApiKey();
   const res = await fetch(`${API_BASE}${path}`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      ...(apiKey ? { "X-Gemini-Api-Key": apiKey } : {}),
+      ...aiHeaders(),
     },
     body: JSON.stringify(body),
   });
@@ -246,23 +245,20 @@ export default function StudentPortal({ onSignOut }) {
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   const [selectedTheme, setSelectedTheme] = useState(getInitialTheme);
   const [profilePhoto, setProfilePhoto] = useState(getStoredProfilePhoto);
-  const [geminiApiKey, setGeminiApiKey] = useState(getGeminiApiKey);
-  const [resume, setResume] = useState("");
-  const [jobDescription, setJobDescription] = useState("");
-  const [resumeMode, setResumeMode] = useState("upload");
-  const [activeTemplate, setActiveTemplate] = useState("Professional");
-  const [activeSection, setActiveSection] = useState("analyzer");
+  const [resume, setResume] = usePersistedState("student-resume", "");
+  const [jobDescription, setJobDescription] = usePersistedState("student-jd", "");
+  const [resumeMode, setResumeMode] = usePersistedState("student-resume-mode", "upload");
+  const [activeTemplate, setActiveTemplate] = usePersistedState("student-template", "Professional");
+  const [activeSection, setActiveSection] = usePersistedState("student-section", "analyzer");
   const [skillsDetailsOpen, setSkillsDetailsOpen] = useState(false);
   const [missingSkillsOpen, setMissingSkillsOpen] = useState(false);
-  const [resumeFileName, setResumeFileName] = useState("Nina_Carter_Resume.pdf");
-  const [resumeFileSize, setResumeFileSize] = useState("234 KB");
-  const [coverPersonalization, setCoverPersonalization] = useState(
-    "Dear Hiring Manager, I am writing to express my interest in the role and my experience in building reliable software systems."
-  );
+  const [resumeFileName, setResumeFileName] = usePersistedState("student-resume-file-name", "Nina_Carter_Resume.pdf");
+  const [resumeFileSize, setResumeFileSize] = usePersistedState("student-resume-file-size", "234 KB");
+  const [coverPersonalization, setCoverPersonalization] = usePersistedState("student-cover-personalization", "Dear Hiring Manager, I am writing to express my interest in the role and my experience in building reliable software systems.");
 
-  const [analysisResult, setAnalysisResult] = useState(null);
+  const [analysisResult, setAnalysisResult] = usePersistedState("student-analysis", null);
   const [parsedJobDetails, setParsedJobDetails] = useState(null);
-  const [coverLetter, setCoverLetter] = useState("");
+  const [coverLetter, setCoverLetter] = usePersistedState("student-cover-letter", "");
   const [uploadedResumes, setUploadedResumes] = useState([]);
 
   const [loading, setLoading] = useState(null);
@@ -399,10 +395,6 @@ export default function StudentPortal({ onSignOut }) {
   }, [profilePhoto]);
 
   useEffect(() => {
-    setStoredGeminiApiKey(geminiApiKey);
-  }, [geminiApiKey]);
-
-  useEffect(() => {
     const jobText = jobDescription.trim();
     if (!jobText) {
       setParsedJobDetails(null);
@@ -414,7 +406,7 @@ export default function StudentPortal({ onSignOut }) {
       try {
         const res = await fetch(`${API_BASE}/api/hr/parse-jd`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json", ...aiHeaders() },
           body: JSON.stringify({ job_description: jobText }),
           signal: controller.signal,
         });
@@ -480,7 +472,7 @@ export default function StudentPortal({ onSignOut }) {
         job_description: jobText,
       });
       setAnalysisResult(analysis);
-      setError("");
+      setError(analysis.ai_warning || "");
     } catch (err) {
       setError(err.message);
     } finally {
@@ -620,14 +612,6 @@ export default function StudentPortal({ onSignOut }) {
     setSelectedTheme(theme);
   }
 
-  function handleSaveApiKey(key) {
-    setGeminiApiKey(key.trim());
-  }
-
-  function handleClearApiKey() {
-    setGeminiApiKey("");
-  }
-
   function handleProfilePhotoUpload(event) {
     const file = event.target.files?.[0];
     event.target.value = "";
@@ -651,6 +635,7 @@ export default function StudentPortal({ onSignOut }) {
     setProfileMenuOpen(false);
     try {
       await signOut(auth);
+      clearSessionData();
       if (typeof window !== "undefined") {
         window.sessionStorage.removeItem("hireflow-account-email");
       }
@@ -747,9 +732,6 @@ export default function StudentPortal({ onSignOut }) {
             selectedTheme={selectedTheme}
             themeOptions={THEME_OPTIONS}
             onSelectTheme={handleSelectTheme}
-            geminiApiKey={geminiApiKey}
-            onSaveApiKey={handleSaveApiKey}
-            onClearApiKey={handleClearApiKey}
           />
         ) : activeSection === "resume" ? (
           <ResumeLibrary

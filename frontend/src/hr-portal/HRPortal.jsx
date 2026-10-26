@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { signOut } from "firebase/auth";
 import { auth } from "../firebase.js";
-import { getGeminiApiKey, setGeminiApiKey as setStoredGeminiApiKey } from "../geminiKey.js";
+import AiKeySettings from "../AiKeySettings.jsx";
+import { aiHeaders, clearSessionData } from "../aiSettings.js";
+import { usePersistedState } from "../sessionState.js";
 import "./HRPortal.css";
 
 const API_BASE = import.meta.env.VITE_API_BASE || "http://127.0.0.1:8000";
@@ -24,7 +26,7 @@ You will build internal tools, work with Docker and AWS, and collaborate with pr
 Experience with APIs, analytics dashboards, and scalable workflows is preferred.
 Bachelor's degree or equivalent experience required.`;
 
-// Bring-your-own-key: kept in sessionStorage only (see ../geminiKey.js).
+// Bring-your-own-key: kept in sessionStorage only (see ../aiSettings.js).
 
 // Email/password sign-in never creates a Firebase Auth session (only Google
 // does), so the account's real name/email/role has to come from the account
@@ -37,17 +39,20 @@ function getStoredAccountEmail() {
 }
 
 async function postJSON(path, body) {
-  const apiKey = getGeminiApiKey();
   const res = await fetch(`${API_BASE}${path}`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      ...(apiKey ? { "X-Gemini-Api-Key": apiKey } : {}),
+      ...aiHeaders(),
     },
     body: JSON.stringify(body),
   });
   if (!res.ok) {
-    throw new Error(`Request to ${path} failed with status ${res.status}`);
+    const detail = await res
+      .json()
+      .then((data) => (typeof data?.detail === "string" ? data.detail : null))
+      .catch(() => null);
+    throw new Error(detail || `Request to ${path} failed with status ${res.status}`);
   }
   return res.json();
 }
@@ -269,28 +274,22 @@ function NavIcon({ name }) {
 }
 
 export default function HRPortal({ onBack }) {
-  const [activeTab, setActiveTab] = useState("analyze");
+  const [activeTab, setActiveTab] = usePersistedState("hr-tab", "analyze");
 
   const profileMenuRef = useRef(null);
   const profileMenuButtonRef = useRef(null);
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   const [accountRecord, setAccountRecord] = useState(null);
 
-  // Bring-your-own AI key (shared with the student portal's saved key; see
-  // geminiKey.js/postJSON above — sessionStorage only).
-  const [geminiApiKey, setGeminiApiKey] = useState(getGeminiApiKey);
-  const [apiKeyDraft, setApiKeyDraft] = useState(geminiApiKey);
-  const [apiKeySaved, setApiKeySaved] = useState(false);
-
   // Job description
-  const [jobDescription, setJobDescription] = useState("");
+  const [jobDescription, setJobDescription] = usePersistedState("hr-jd", "");
 
   // Job requisition (a job opening that can be reopened later as its own record)
   const [requisitions, setRequisitions] = useState([]);
-  const [requisitionMode, setRequisitionMode] = useState("new");
-  const [newRequisitionTitle, setNewRequisitionTitle] = useState("");
-  const [selectedRequisitionId, setSelectedRequisitionId] = useState("");
-  const [activeRequisitionId, setActiveRequisitionId] = useState("");
+  const [requisitionMode, setRequisitionMode] = usePersistedState("hr-req-mode", "new");
+  const [newRequisitionTitle, setNewRequisitionTitle] = usePersistedState("hr-req-title", "");
+  const [selectedRequisitionId, setSelectedRequisitionId] = usePersistedState("hr-req-selected", "");
+  const [activeRequisitionId, setActiveRequisitionId] = usePersistedState("hr-req-active", "");
 
   // Resume source
   const [resumeSource, setResumeSource] = useState("local");
@@ -301,18 +300,18 @@ export default function HRPortal({ onBack }) {
   const [azureLoaded, setAzureLoaded] = useState(false);
 
   // Analysis run
-  const [rankedCandidates, setRankedCandidates] = useState([]);
+  const [rankedCandidates, setRankedCandidates] = usePersistedState("hr-ranked", []);
   const [analysisProgress, setAnalysisProgress] = useState(null);
   const [failedFiles, setFailedFiles] = useState([]);
 
   const [dashboard, setDashboard] = useState(null);
   const [analytics, setAnalytics] = useState(null);
-  const [dashboardRequisitionId, setDashboardRequisitionId] = useState("");
+  const [dashboardRequisitionId, setDashboardRequisitionId] = usePersistedState("hr-dash-req", "");
   const [pendingEmails, setPendingEmails] = useState([]);
   const [emailsLoading, setEmailsLoading] = useState(false);
 
   // Interview pipeline (per-requisition, persisted)
-  const [interviewsRequisitionId, setInterviewsRequisitionId] = useState("");
+  const [interviewsRequisitionId, setInterviewsRequisitionId] = usePersistedState("hr-interviews-req", "");
   const [pipelineRecords, setPipelineRecords] = useState([]);
   const [pipelineLoading, setPipelineLoading] = useState(false);
   const [moveTarget, setMoveTarget] = useState({});
@@ -336,22 +335,6 @@ export default function HRPortal({ onBack }) {
       .then(setAccountRecord)
       .catch(() => {});
   }, []);
-
-  useEffect(() => {
-    setStoredGeminiApiKey(geminiApiKey);
-  }, [geminiApiKey]);
-
-  function handleSaveApiKey(event) {
-    event.preventDefault();
-    setGeminiApiKey(apiKeyDraft.trim());
-    setApiKeySaved(true);
-    window.setTimeout(() => setApiKeySaved(false), 2000);
-  }
-
-  function handleClearApiKey() {
-    setApiKeyDraft("");
-    setGeminiApiKey("");
-  }
 
   useEffect(() => {
     const handleClick = (event) => {
@@ -388,6 +371,7 @@ export default function HRPortal({ onBack }) {
     } catch (err) {
       // Not fatal to leaving the portal — still navigate back to login.
     }
+    clearSessionData();
     if (typeof window !== "undefined") {
       window.sessionStorage.removeItem("hireflow-account-email");
     }
@@ -685,6 +669,9 @@ export default function HRPortal({ onBack }) {
         candidates,
       });
       setRankedCandidates(result.ranked || []);
+      if (result.ai_warning) {
+        setError(result.ai_warning);
+      }
       setActiveRequisitionId(requisitionId);
       setInterviewsRequisitionId(requisitionId);
       loadPipeline(requisitionId);
@@ -1468,35 +1455,20 @@ export default function HRPortal({ onBack }) {
                 </p>
               </div>
               <p className="hr-portal__muted">
-                Bring your own Gemini API key to power JD parsing and resume ranking. It's saved only in this browser
-                (never sent to our servers for storage) and attached to your AI requests as needed.
+                Bring your own Gemini, Claude or OpenAI key to power JD parsing and resume ranking. It's kept only for
+                this browser session and is cleared when you sign out.
               </p>
-              <form onSubmit={handleSaveApiKey}>
-                <div className="hr-portal__field">
-                  <label htmlFor="hr-gemini-key-input">Gemini API key</label>
-                  <input
-                    id="hr-gemini-key-input"
-                    type="password"
-                    autoComplete="off"
-                    spellCheck={false}
-                    className="hr-portal__text-input"
-                    placeholder="Paste your Gemini API key"
-                    value={apiKeyDraft}
-                    onChange={(e) => setApiKeyDraft(e.target.value)}
-                  />
-                </div>
-                <div className="hr-portal__form-actions">
-                  <button type="submit" className="hr-portal__btn hr-portal__btn--primary">
-                    Save key
-                  </button>
-                  {geminiApiKey ? (
-                    <button type="button" className="hr-portal__btn hr-portal__btn--ghost" onClick={handleClearApiKey}>
-                      Remove
-                    </button>
-                  ) : null}
-                  {apiKeySaved ? <span className="hr-portal__muted">Saved.</span> : null}
-                </div>
-              </form>
+              <AiKeySettings
+                classes={{
+                  stack: "hr-portal__form",
+                  input: "hr-portal__text-input",
+                  actions: "hr-portal__form-actions",
+                  primary: "hr-portal__btn hr-portal__btn--primary",
+                  ghost: "hr-portal__btn hr-portal__btn--ghost",
+                  hint: "hr-portal__muted",
+                  label: "hr-portal__muted",
+                }}
+              />
             </div>
           </div>
         )}
