@@ -2,10 +2,13 @@
 
 <img width="1599" height="815" alt="Screenshot 2026-10-15 at 2 43 37 PM" src="https://github.com/user-attachments/assets/7c159a39-5124-4252-84f9-0953cef9d632" />
 <img width="1599" height="815" alt="Screenshot 2026-10-15 at 2 45 16 PM" src="https://github.com/user-attachments/assets/cffcefc0-7d77-49b1-9309-ef00cbac78ed" />
-<img width="1599" height="815" alt="Screenshot 2026-10-15 at 2 45 22 PM" src="https://github.com/user-attachments/assets/eafed612-cb72-43ed-ba02-a1af1ad1c720" />
-<img width="1657" height="795" alt="Screenshot 2026-10-15 at 2 49 13 PM" src="https://github.com/user-attachments/assets/888b190d-4a76-40f0-b94a-f7feb0836399" />
-<img width="1657" height="795" alt="Screenshot 2026-10-15 at 2 49 24 PM" src="https://github.com/user-attachments/assets/92379d02-d380-4ff2-bb5c-ae988b12e009" />
-<img width="1657" height="795" alt="Screenshot 2026-10-15 at 2 49 45 PM" src="https://github.com/user-attachments/assets/fb1a6be1-01f3-4b3e-8800-1a61d49d518c" />
+<img width="1666" height="788" alt="Screenshot 2026-10-27 at 12 57 25 PM" src="https://github.com/user-attachments/assets/e63e1667-2fca-4f0c-8e04-467aa547d2ea" />
+<img width="1666" height="788" alt="Screenshot 2026-10-27 at 12 57 42 PM" src="https://github.com/user-attachments/assets/f4562934-790e-4c39-a551-2c6ebbb2c30f" />
+<img width="1666" height="788" alt="Screenshot 2026-10-27 at 12 57 49 PM" src="https://github.com/user-attachments/assets/b1646d49-db77-41d4-93a4-ee46f706ef9c" />
+<img width="1127" height="811" alt="Screenshot 2026-10-27 at 12 58 53 PM" src="https://github.com/user-attachments/assets/d19cbe7e-069d-4339-b3c3-85972af15dfb" />
+
+
+
 
 An AI-assisted hiring platform with two portals: a **Student portal** for resume analysis and career guidance, and an **HR portal** for job-description parsing, candidate screening, and applicant ranking.
 
